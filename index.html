@@ -235,16 +235,15 @@
 
   .chart { position: relative; margin-top: 24px; }
   .chart-title { font-size: 14px; color: var(--ink-2); margin-bottom: 14px; }
-  .chart-bars { display: flex; gap: 6px; align-items: flex-end; }
-  .col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-  .bar-track { height: 110px; width: 100%; display: flex; align-items: flex-end; justify-content: center; }
-  .bar {
-    width: 100%; max-width: 26px; background: var(--bar);
-    border-radius: 4px 4px 0 0; min-height: 2px; cursor: pointer;
-  }
-  .bar.today { background: var(--bar-today); }
-  .bar:focus { outline: 2px solid var(--bar-today); outline-offset: 2px; }
-  .day { font-size: 11px; color: var(--muted); }
+  .chart-bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .dayring { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }
+  .ring-svg { width: 46px; height: 46px; }
+  .ring-svg .ring-track { fill: none; stroke: var(--track); stroke-width: 3; }
+  .ring-svg .ring-prog { fill: none; stroke: var(--bar); stroke-width: 3; stroke-linecap: round; }
+  .dayring.today .ring-svg .ring-prog { stroke: var(--bar-today); }
+  .ring-svg .ring-text { font-size: 10px; fill: var(--ink-2); font-weight: 600; }
+  .dayring .day-label { font-size: 11px; color: var(--muted); }
+  .dayring.today .day-label { color: var(--ink); font-weight: 600; }
 
   .settings-link {
     display: block; margin: 18px auto 0; background: none; border: none;
@@ -328,17 +327,10 @@
     .tile { padding: 8px 12px; }
 
     .chart { grid-area: chart; margin-top: 0; }
-    .chart-title { font-size: 12px; margin-bottom: 6px; }
-    .chart-bars.h { flex-direction: column; gap: 4px; align-items: stretch; }
-    .hrow { display: flex; align-items: center; gap: 10px; width: 100%; }
-    .hday { flex: 0 0 30px; text-align: right; font-size: 11px; line-height: 1; color: var(--muted); }
-    .hday.today { color: var(--ink); font-weight: 600; }
-    .hbar-track { flex: 1; height: 6px; background: var(--track); border-radius: 4px; }
-    .hbar { height: 100%; background: var(--bar); border-radius: 0 4px 4px 0; transform-origin: left; transition: width .4s ease; }
-    .hbar.today { background: var(--bar-today); }
-    .hbar.growh { animation: growH .6s cubic-bezier(.2,.8,.2,1) backwards; }
-    .hval { flex: 0 0 34px; text-align: right; font-size: 11px; line-height: 1; color: var(--ink-2); font-variant-numeric: tabular-nums; }
-    @keyframes growH { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    .chart-title { font-size: 12px; margin-bottom: 12px; }
+    .chart-bars { gap: 10px; }
+    .ring-svg { width: 52px; height: 52px; }
+    .ring-svg .ring-text { font-size: 11px; }
 
     .modal-card { border-radius: 20px; margin: auto; max-width: 460px; }
     .modal { align-items: center; }
@@ -912,82 +904,68 @@
 
   var chartSig = null;
 
-  function isHorizontal() {
-    return window.matchMedia && window.matchMedia('(min-width: 720px)').matches;
-  }
-
-  function makeBar(bar, tip, isToday) {
-    bar.setAttribute('role', 'img');
-    bar.setAttribute('tabindex', '0');
-    bar.setAttribute('aria-label', (isToday ? t('today') + ' · ' : '') + tip);
-    bar.addEventListener('pointerenter', function () { showTip(bar, tip); });
-    bar.addEventListener('pointerleave', hideTip);
-    bar.addEventListener('focus', function () { showTip(bar, tip); });
-    bar.addEventListener('blur', hideTip);
-  }
-
   function renderChart() {
     var days = last7Days();
-    var horizontal = isHorizontal();
-    var sig = JSON.stringify(days.map(function (d) { return (stats[d.key] && stats[d.key].min) || 0; })) + '|' + lang + '|' + (horizontal ? 'h' : 'v');
+    var sig = JSON.stringify(days.map(function (d) { return (stats[d.key] && stats[d.key].min) || 0; })) + '|' + lang + '|' + settings.goal;
     if (sig === chartSig) return;
     chartSig = sig;
     var box = document.getElementById('chartBars');
     box.innerHTML = '';
-    box.classList.toggle('h', horizontal);
     var tKey = todayKey();
-    var max = 1;
+    var goal = settings.goal || 120;
+    var R = 15.5;
+    var C = 2 * Math.PI * R;
+    var NS = 'http://www.w3.org/2000/svg';
+
     days.forEach(function (d) {
       var v = (stats[d.key] && stats[d.key].min) || 0;
-      if (v > max) max = v;
-    });
-
-    days.forEach(function (d, i) {
-      var v = (stats[d.key] && stats[d.key].min) || 0;
       var isToday = d.key === tKey;
+      var frac = Math.min(1, v / goal);
       var tip = d.label + ' · ' + v + ' ' + t('minutes');
 
-      if (horizontal) {
-        var row = document.createElement('div');
-        row.className = 'hrow';
-        var dayEl = document.createElement('span');
-        dayEl.className = 'hday' + (isToday ? ' today' : '');
-        dayEl.textContent = d.label;
-        var htrack = document.createElement('div');
-        htrack.className = 'hbar-track';
-        var hbar = document.createElement('div');
-        hbar.className = 'hbar' + (isToday ? ' today' : '');
-        hbar.style.width = (v === 0 ? '0%' : Math.max(2, Math.round(v / max * 100)) + '%');
-        if (chartFirst) { hbar.classList.add('growh'); hbar.style.animationDelay = (i * 40) + 'ms'; }
-        makeBar(hbar, tip, isToday);
-        htrack.appendChild(hbar);
-        var valEl = document.createElement('span');
-        valEl.className = 'hval';
-        valEl.textContent = v;
-        row.appendChild(dayEl);
-        row.appendChild(htrack);
-        row.appendChild(valEl);
-        box.appendChild(row);
-      } else {
-        var col = document.createElement('div');
-        col.className = 'col';
-        var track = document.createElement('div');
-        track.className = 'bar-track';
-        var bar = document.createElement('div');
-        bar.className = 'bar' + (isToday ? ' today' : '');
-        bar.style.height = (v === 0 ? '2px' : Math.round(v / max * 100) + '%');
-        if (chartFirst) { bar.classList.add('grow'); bar.style.animationDelay = (i * 45) + 'ms'; }
-        makeBar(bar, tip, isToday);
-        track.appendChild(bar);
-        col.appendChild(track);
-        var day = document.createElement('div');
-        day.className = 'day';
-        day.textContent = d.label;
-        col.appendChild(day);
-        box.appendChild(col);
-      }
+      var cell = document.createElement('div');
+      cell.className = 'dayring' + (isToday ? ' today' : '');
+      cell.setAttribute('role', 'img');
+      cell.setAttribute('tabindex', '0');
+      cell.setAttribute('aria-label', (isToday ? t('today') + ' · ' : '') + tip);
+      cell.addEventListener('pointerenter', function () { showTip(cell, tip); });
+      cell.addEventListener('pointerleave', hideTip);
+      cell.addEventListener('focus', function () { showTip(cell, tip); });
+      cell.addEventListener('blur', hideTip);
+
+      var svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 36 36');
+      svg.setAttribute('class', 'ring-svg');
+
+      var track = document.createElementNS(NS, 'circle');
+      track.setAttribute('class', 'ring-track');
+      track.setAttribute('cx', '18'); track.setAttribute('cy', '18'); track.setAttribute('r', String(R));
+
+      var prog = document.createElementNS(NS, 'circle');
+      prog.setAttribute('class', 'ring-prog');
+      prog.setAttribute('cx', '18'); prog.setAttribute('cy', '18'); prog.setAttribute('r', String(R));
+      prog.setAttribute('stroke-dasharray', C.toFixed(2));
+      prog.setAttribute('stroke-dashoffset', (C * (1 - frac)).toFixed(2));
+      prog.setAttribute('transform', 'rotate(-90 18 18)');
+
+      var txt = document.createElementNS(NS, 'text');
+      txt.setAttribute('class', 'ring-text');
+      txt.setAttribute('x', '18'); txt.setAttribute('y', '19.5');
+      txt.setAttribute('text-anchor', 'middle');
+      if (v > 0) txt.textContent = v;
+
+      svg.appendChild(track);
+      svg.appendChild(prog);
+      svg.appendChild(txt);
+
+      var label = document.createElement('div');
+      label.className = 'day-label';
+      label.textContent = d.label;
+
+      cell.appendChild(svg);
+      cell.appendChild(label);
+      box.appendChild(cell);
     });
-    chartFirst = false;
   }
 
   function showTip(el, text) {
